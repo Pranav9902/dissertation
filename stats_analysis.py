@@ -1,17 +1,33 @@
-# stats_analysis.py
+"""
+Statistical Analysis Script for EPL Injury and Performance Dataset
+Author: Pranav Prasanth
+
+Description:
+  Performs descriptive and inferential statistical analyses on pre- and post-injury performance metrics,
+  including paired t-tests and ANOVA. Outputs summary tables for reporting in the dissertation.
+  This script implements the statistical methodology described in Section 3.8 of the dissertation.
+
+Inputs:
+  - feature_engineered_dataset.csv
+
+Outputs:
+  - outputs/episode_level_pre_post.csv       # Per-episode summary of pre/post metrics
+  - outputs/stats_tests_summary.csv          # Results of paired t-tests
+  - outputs/anova_by_position.csv            # ANOVA results by position
+"""
+
 import os
-import json
 import numpy as np
 import pandas as pd
 from scipy.stats import ttest_rel, f_oneway
 
 os.makedirs("outputs", exist_ok=True)
 
-# --- Load data ---
+# --- Load feature-engineered dataset ---
 DF_PATH = "feature_engineered_dataset.csv"
 df = pd.read_csv(DF_PATH, low_memory=False, parse_dates=["date", "injured_since", "injured_until"])
 
-# --- Basic guards / defaults ---
+# --- Ensure required columns exist for compatibility ---
 for col in ["player_name", "player_name_clean"]:
     if col not in df.columns:
         df[col] = np.nan
@@ -27,10 +43,13 @@ df["minutes_played"] = pd.to_numeric(df["minutes_played"], errors="coerce").fill
 df["goals"] = pd.to_numeric(df["goals"], errors="coerce").fillna(0)
 df["assists"] = pd.to_numeric(df["assists"], errors="coerce").fillna(0)
 
-# Extract primary position (first listed position)
+# --- Extract broad player position for stratified analysis ---
 df["primary_position"] = df["position_type"].str.split(r"[,/]").str[0].str.strip()
 
 def simplify_position(pos):
+    """
+    Simplify a position string to broad categories: GK, DF, MF, FW, or Hybrid.
+    """
     if pd.isna(pos): return "Unknown"
     pos = pos.upper()
     if "GK" in pos: return "GK"
@@ -41,7 +60,7 @@ def simplify_position(pos):
 
 df["broad_position"] = df["primary_position"].apply(simplify_position)
 
-# unique match rows to avoid duplication from merges
+# --- Unique match rows to avoid duplication from merges ---
 matches = (
     df[["player_name_clean", "player_name", "date", "position_type", "minutes_played", "goals", "assists"]]
     .dropna(subset=["player_name_clean", "date"])
@@ -50,15 +69,18 @@ matches = (
     .reset_index(drop=True)
 )
 
-# per-90 helpers
+# --- Calculate per-90-minute rates ---
 def rate_per90(numer, mins):
+    """
+    Calculate a per-90-minutes rate, handling divide by zero.
+    """
     mins = np.where(mins <= 0, np.nan, mins)
     return (numer / mins) * 90
 
 matches["goals90"] = rate_per90(matches["goals"], matches["minutes_played"])
 matches["assists90"] = rate_per90(matches["assists"], matches["minutes_played"])
 
-# injury episodes (distinct ranges)
+# --- Identify injury episodes: each is a distinct range per player ---
 episodes = (
     df.dropna(subset=["injured_since", "injured_until", "player_name_clean"])
       [["player_name_clean", "player_name", "injured_since", "injured_until", "position_type"]]
@@ -67,11 +89,11 @@ episodes = (
       .reset_index(drop=True)
 )
 
-WIN_PRE = 5   # last N matches before injured_since
-WIN_POST = 5  # first N matches after injured_until
+WIN_PRE = 5   # Number of matches before injury to consider
+WIN_POST = 5  # Number of matches after injury to consider
 
 rows = []
-for i, ep in episodes.iterrows():
+for _, ep in episodes.iterrows():
     p = ep["player_name_clean"]
     pos = ep.get("position_type", np.nan)
     start = ep["injured_since"]
@@ -123,10 +145,13 @@ for i, ep in episodes.iterrows():
 episode_level = pd.DataFrame(rows)
 episode_level.to_csv("outputs/episode_level_pre_post.csv", index=False)
 
-# --- Paired tests (keep only rows with both pre and post non-null) ---
+# --- Paired t-tests on pre/post differences (only for players with both) ---
 test_results = []
 
 def paired_ttest(pre_col, post_col, label):
+    """
+    Perform a paired t-test for pre- and post-injury metrics.
+    """
     sub = episode_level[[pre_col, post_col]].dropna()
     if len(sub) >= 2:
         stat, p = ttest_rel(sub[post_col], sub[pre_col], nan_policy="omit")
@@ -139,7 +164,7 @@ test_results.append(paired_ttest("pre_assists90_mean", "post_assists90_mean", "A
 
 pd.DataFrame(test_results).to_csv("outputs/stats_tests_summary.csv", index=False)
 
-# --- ANOVA on deltas by primary_position ---
+# --- ANOVA on deltas by player position ---
 anova_rows = []
 if "primary_position" in episode_level.columns and episode_level["primary_position"].notna().any():
     tmp = episode_level.dropna(subset=["delta_goals90_mean", "primary_position"])
@@ -149,7 +174,7 @@ if "primary_position" in episode_level.columns and episode_level["primary_positi
         fstat, p = f_oneway(*groups)
         anova_rows.append({"metric": "delta_goals90_mean_by_primary_position", "k_groups": len(groups), "f_stat": float(fstat), "p_value": float(p)})
 
-# --- (Optional) ANOVA on deltas by broad_position ---
+# (Optional) ANOVA by broad_position
 if "broad_position" in episode_level.columns and episode_level["broad_position"].notna().any():
     tmp = episode_level.dropna(subset=["delta_goals90_mean", "broad_position"])
     groups = [g["delta_goals90_mean"].values for _, g in tmp.groupby("broad_position")]
