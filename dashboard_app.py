@@ -1,3 +1,19 @@
+"""
+Streamlit Dashboard for EPL Injury and Performance Analytics
+Author: Pranav Prasanth
+
+Description:
+  Interactive dashboard for visualizing and exploring EPL player injury and performance data.
+  Provides global league-level overviews, club and player explorers, and a variety of KPIs and charts.
+  Implements the visualization and dashboarding methodology described in Section 3.11 of the dissertation.
+
+Inputs:
+  - feature_engineered_dataset.csv
+
+Usage:
+  Run with: streamlit run dashboard_app.py
+"""
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -11,6 +27,10 @@ def filter_large_csv(
     club_options=None,
     chunk_size=1000
 ):
+    """
+    Efficiently filter a large CSV file in chunks based on filter selections.
+    Returns a filtered DataFrame.
+    """
     needed_cols = [
         "date", "season_epl", "position_type", "event_period",
         "home_team_clean", "away_team_clean", "matchday",
@@ -38,6 +58,9 @@ def filter_large_csv(
 
 @st.cache_data
 def load_data():
+    """
+    Load the feature-engineered dataset from CSV.
+    """
     df = pd.read_csv("feature_engineered_dataset.csv", parse_dates=["date"])
     return df
 
@@ -50,6 +73,9 @@ def filter_in_memory(
     event_period_options=None,
     club_options=None
 ):
+    """
+    Filter an in-memory DataFrame based on filter selections.
+    """
     df_filtered = df.copy()
     if season_options:
         df_filtered = df_filtered[df_filtered["season_epl"].isin(season_options)]
@@ -64,7 +90,7 @@ def filter_in_memory(
         ]
     return df_filtered
 
-# --- Club Name Mapping ---
+# --- Club Name Mapping for dashboard display ---
 CLUB_NAME_MAP = {
     "Arsenal": "Arsenal FC",
     "Aston Villa": "Aston Villa",
@@ -106,10 +132,11 @@ st.title("⚽ EPL Player Injury & Performance Dashboard")
 
 tab1, tab2 = st.tabs(["📊 Global Dashboard", "🏟️ Club & Player Explorer"])
 
+# --- Tab 1: Global Dashboard ---
 with tab1:
     st.header("🌍 Global Overview (League Level)")
 
-    # --- KPIs ---
+    # Display league-level KPIs
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Total Matches", df["matchday"].nunique())
@@ -121,7 +148,7 @@ with tab1:
     with col4:
         st.metric("Avg Games Missed per Player", f"{df['games_missed'].mean():.2f}")
 
-    # --- Global Chart Selector ---
+    # Global chart selector
     global_chart_options = [
         "Injuries per Season",
         "Injuries by Position",
@@ -134,19 +161,23 @@ with tab1:
     ]
     selected_global_chart = st.selectbox("Select a global chart to display", global_chart_options)
 
+    # Charts by selection - each with a rationale comment
     if selected_global_chart == "Injuries per Season":
+        # Shows temporal trends in injury frequency across seasons
         st.markdown("### 📈 Injuries per Season")
         injuries_per_season = df[df["injury"] == 1].groupby("season_epl")["injury"].count().reset_index()
         fig_season = px.line(injuries_per_season, x="season_epl", y="injury", markers=True, title="Total Injuries Each Season")
         st.plotly_chart(fig_season, use_container_width=True)
 
     elif selected_global_chart == "Injuries by Position":
+        # Distribution of injuries across positions
         st.markdown("### 🟦 Injuries by Position")
         injuries_by_pos = df[df["injury"] == 1].groupby("position_type")["injury"].count().reset_index()
         fig_pos = px.bar(injuries_by_pos, x="position_type", y="injury", title="Injuries by Position")
         st.plotly_chart(fig_pos, use_container_width=True)
 
     elif selected_global_chart == "Injury Duration Categories":
+        # Categorizes injuries as short, medium, or long
         st.markdown("### 📊 Injury Duration Categories")
         bins = [0, 14, 30, df["injury_days"].max()]
         labels = ["Short (<15d)", "Medium (15–30d)", "Long (>30d)"]
@@ -156,6 +187,7 @@ with tab1:
         st.plotly_chart(fig_duration, use_container_width=True)
 
     elif selected_global_chart == "Minutes Played Pre vs Post Injury":
+        # Compares average minutes played before and after injury
         st.markdown("### ⚽ Minutes Played Pre vs Post Injury")
         perf_df = df[df["event_period"].isin(["pre", "post"])].copy()
         perf_group = perf_df.groupby("event_period")["minutes_played"].mean().reset_index()
@@ -163,6 +195,7 @@ with tab1:
         st.plotly_chart(fig_min, use_container_width=True)
 
     elif selected_global_chart == "Goals/Assists Pre vs Post Injury (per 90)":
+        # Shows changes in goal and assist rates pre- and post-injury
         st.markdown("### ⚡ Goals/Assists Pre vs Post Injury (per 90 mins)")
         import numpy as np
         perf_df = df[df["event_period"].isin(["pre", "post"])].copy()
@@ -173,63 +206,28 @@ with tab1:
         st.plotly_chart(fig_ga, use_container_width=True)
 
     elif selected_global_chart == "Workload & Starts Distribution (injured vs non-injured)":
+        # Compare match workload by injury status
         st.markdown("### 🔁 Workload & Starts Distribution")
         df.loc[:, "injured_ever"] = df.groupby("player_name_matchlog")["injury"].transform("max")
         fig_workload = px.box(df, x="injured_ever", y="minutes_played", points="all", title="Minutes Played: Injured vs Non-Injured")
         st.plotly_chart(fig_workload, use_container_width=True)
 
     elif selected_global_chart == "Events by Period":
+        # Shows events (starts, subs, minutes) by injury recovery phase
         st.markdown("### Events by Period")
         events_group = df.groupby("event_period")[["starts", "subs_in", "minutes_played"]].mean().reset_index()
         fig_events = px.bar(events_group, x="event_period", y=["starts", "subs_in", "minutes_played"], barmode="group", title="Events by Period")
         st.plotly_chart(fig_events, use_container_width=True)
 
     elif selected_global_chart == "Recovery Curve":
+        # Plots average minutes played per matchday before and after injury
         st.markdown("### 📈 Recovery Curve")
         recovery_df = df[df["event_period"].isin(["pre", "post"])]
         recovery_curve = recovery_df.groupby(["event_period", "matchday"])["minutes_played"].mean().reset_index()
         fig_recovery = px.line(recovery_curve, x="matchday", y="minutes_played", color="event_period", title="Avg Minutes per Game: Pre vs Post Injury")
         st.plotly_chart(fig_recovery, use_container_width=True)
 
-    st.header("⚡ Impact on Performance")
-
-    # --- Minutes Played Pre vs Post Injury ---
-    st.markdown("### ⚽ Minutes Played Pre vs Post Injury")
-    perf_df = df[df["event_period"].isin(["pre", "post"])]
-    perf_group = perf_df.groupby("event_period")["minutes_played"].mean().reset_index()
-    fig_min = px.bar(perf_group, x="event_period", y="minutes_played", title="Avg Minutes Played Pre vs Post Injury")
-    st.plotly_chart(fig_min, use_container_width=True)
-
-    # --- Goals/Assists Pre vs Post Injury (per 90) ---
-    st.markdown("### ⚡ Goals/Assists Pre vs Post Injury (per 90 mins)")
-    for col in ["goals", "assists"]:
-        perf_df[f"{col}_per90"] = perf_df[col] / (perf_df["minutes_played"] / 90)
-    ga_group = perf_df.groupby("event_period")[["goals_per90", "assists_per90"]].mean().reset_index()
-    fig_ga = px.bar(ga_group, x="event_period", y=["goals_per90", "assists_per90"], barmode="group", title="Goals/Assists per 90 Pre vs Post Injury")
-    st.plotly_chart(fig_ga, use_container_width=True)
-
-    # --- Workload & Starts Distribution (injured vs non-injured) ---
-    st.markdown("### 🔁 Workload & Starts Distribution")
-    df["injured_ever"] = df.groupby("player_name_matchlog")["injury"].transform("max")
-    fig_workload = px.box(df, x="injured_ever", y="minutes_played", points="all", title="Minutes Played: Injured vs Non-Injured")
-    st.plotly_chart(fig_workload, use_container_width=True)
-
-    st.header("📊 Injury Period Analysis")
-
-    # --- Events by period ---
-    st.markdown("### Events by Period")
-    events_group = df.groupby("event_period")[["starts", "subs_in", "minutes_played"]].mean().reset_index()
-    fig_events = px.bar(events_group, x="event_period", y=["starts", "subs_in", "minutes_played"], barmode="group", title="Events by Period")
-    st.plotly_chart(fig_events, use_container_width=True)
-
-    # --- Recovery curve: avg minutes per game after return vs before injury ---
-    st.markdown("### 📈 Recovery Curve")
-    recovery_df = df[df["event_period"].isin(["pre", "post"])]
-    recovery_curve = recovery_df.groupby(["event_period", "matchday"])["minutes_played"].mean().reset_index()
-    fig_recovery = px.line(recovery_curve, x="matchday", y="minutes_played", color="event_period", title="Avg Minutes per Game: Pre vs Post Injury")
-    st.plotly_chart(fig_recovery, use_container_width=True)
-
-    # --- Sidebar Filters ---
+    # Sidebar filters allow users to subset the data
     st.sidebar.header("🔍 Filter Data")
     season_options = sorted(df["season_epl"].dropna().unique())
     selected_season = st.sidebar.multiselect("Select Season", season_options, default=season_options)
@@ -243,7 +241,7 @@ with tab1:
     else:
         selected_clubs = []
 
-    # --- Add a Run Filter button ---
+    # Run filter button to subset data efficiently
     if "df_filtered" not in st.session_state:
         st.session_state.df_filtered = pd.DataFrame()
 
@@ -263,7 +261,7 @@ with tab1:
         st.warning("⚠️ No data matches your selected filters. Click 'Run Filter' to apply filters.")
         st.stop()
 
-    # --- KPIs ---
+    # KPIs for filtered data
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Total Matches", df_filtered["matchday"].nunique() if "matchday" in df_filtered.columns else "N/A")
@@ -274,7 +272,7 @@ with tab1:
     with col4:
         st.metric("Avg Goals per Player", f"{df_filtered['goals'].mean():.2f}" if "goals" in df_filtered.columns else "N/A")
 
-    # --- Chart Selector ---
+    # Chart selector for filtered subset
     chart_options = [
         "Starts Distribution",
         "Minutes Played Distribution",
@@ -322,7 +320,7 @@ with tab1:
         fig7 = px.histogram(df_filtered, x="games_missed", nbins=30, title="Games Missed Distribution")
         st.plotly_chart(fig7, use_container_width=True)
 
-    # --- Player Lookup ---
+    # Player lookup for specific player analysis
     st.markdown("### 🔎 Individual Player Explorer")
     player_col = "player_name_matchlog"
     if player_col in df_filtered.columns and not df_filtered[player_col].dropna().empty:
@@ -340,54 +338,25 @@ with tab1:
     else:
         st.info("No player data available for the current filter selection.")
 
-    st.write("Missing club_missed_games_for:", df["club_missed_games_for"].isna().sum())
-
-    st.write("Selector club options:", club_options)
-    st.write("Unique clubs in club_missed_games_for:", df["club_missed_games_for"].dropna().unique())
-
-    # --- Impact on Performance
-    st.header("⚡ Impact on Performance")
-
-    # Minutes Played Pre vs Post Injury
-    st.markdown("### ⚽ Minutes Played Pre vs Post Injury")
-    perf_df = df[df["event_period"].isin(["pre", "post"])]
-    perf_group = perf_df.groupby("event_period")["minutes_played"].mean().reset_index()
-    fig_min = px.bar(perf_group, x="event_period", y="minutes_played", title="Avg Minutes Played Pre vs Post Injury")
-    st.plotly_chart(fig_min, use_container_width=True)
-
-    # Goals/Assists Pre vs Post Injury (per 90)
-    st.markdown("### ⚡ Goals/Assists Pre vs Post Injury (per 90 mins)")
-    for col in ["goals", "assists"]:
-        perf_df[f"{col}_per90"] = perf_df[col] / (perf_df["minutes_played"] / 90)
-    ga_group = perf_df.groupby("event_period")[["goals_per90", "assists_per90"]].mean().reset_index()
-    fig_ga = px.bar(ga_group, x="event_period", y=["goals_per90", "assists_per90"], barmode="group", title="Goals/Assists per 90 Pre vs Post Injury")
-    st.plotly_chart(fig_ga, use_container_width=True)
-
-    # Workload & Starts Distribution (injured vs non-injured)
-    st.markdown("### 🔁 Workload & Starts Distribution")
-    df["injured_ever"] = df.groupby("player_name_matchlog")["injury"].transform("max")
-    fig_workload = px.box(df, x="injured_ever", y="minutes_played", points="all", title="Minutes Played: Injured vs Non-Injured")
-    st.plotly_chart(fig_workload, use_container_width=True)
-
+# --- Tab 2: Club & Player Explorer ---
 with tab2:
     st.header("🏟️ Club & Player Explorer")
 
-    # --- Club Selector ---
+    # Club and season selector
     club_options = sorted(pd.concat([df["home_team_clean"], df["away_team_clean"]]).dropna().unique())
     selected_club = st.selectbox("Select a Club", club_options)
     season_options = sorted(df["season_epl"].dropna().unique())
     selected_season = st.selectbox("Select a Season", season_options)
 
-    # --- Subset for club & season ---
+    # Subset for club & season
     club_name_for_data = CLUB_NAME_MAP.get(selected_club, selected_club)
     club_df = df[
         (df["season_epl"] == selected_season) &
         (df["club_missed_games_for"] == club_name_for_data)
     ]
 
-    # --- Injured Players ---
+    # KPIs for club and season
     injured_players = club_df[club_df["injury"] == 1]["player_name_matchlog"].unique()
-
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
     with kpi1:
         st.metric("🧍 Players Injured", len(injured_players))
@@ -398,7 +367,7 @@ with tab2:
     with kpi4:
         st.metric("⚽ Games Missed", int(club_df["games_missed"].sum()) if "games_missed" in club_df.columns else "N/A")
 
-    # --- Injured Players List ---
+    # Table of injured players for the selected club and season
     st.markdown("### 🚑 Injured Players")
     st.dataframe(
         club_df[club_df["injury"] == 1][
@@ -406,7 +375,7 @@ with tab2:
         ].drop_duplicates().sort_values("injured_since")
     )
 
-    # --- Injury Timeline ---
+    # Injury timeline for the club and season
     if "date" in club_df.columns and "injury" in club_df.columns:
         st.markdown("### 📅 Injury Timeline")
         fig_timeline = px.histogram(
@@ -415,7 +384,7 @@ with tab2:
         )
         st.plotly_chart(fig_timeline, use_container_width=True)
 
-    # --- (Optional) Pie Chart: Injury Type Distribution ---
+    # Pie chart for injury type distribution
     if "injury_type" in club_df.columns and club_df["injury_type"].notna().any():
         st.markdown("### 🥧 Injury Type Distribution")
         fig_pie = px.pie(
@@ -425,7 +394,7 @@ with tab2:
         )
         st.plotly_chart(fig_pie, use_container_width=True)
 
-    # --- Player Deep Dive ---
+    # Player deep dive for selected injured player
     if len(injured_players) > 0:
         selected_player = st.selectbox("Choose a player for deep dive", injured_players)
         player_df = club_df[club_df["player_name_matchlog"] == selected_player]
@@ -446,10 +415,5 @@ with tab2:
             )
             st.plotly_chart(fig_minutes_timeline, use_container_width=True)
 
-    # --- Test: Show injuries for the selected club (any season) ---
-    test_df = df[df["club_missed_games_for"] == selected_club]
-    st.write("Injuries for selected club (any season):", test_df[test_df["injury"] == 1])
-
-    st.dataframe(df_filtered.head(100))  # Show only first 100 rows
-
-st.write(st.session_state)
+    # Display complete filtered DataFrame (optional for inspection)
+    st.dataframe(df_filtered.head(100))
