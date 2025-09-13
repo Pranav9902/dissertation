@@ -1,3 +1,9 @@
+# EPL Match Log Scraper for Transfermarkt (2015–2024)
+# Author: Pranav Prasanth
+# Description:
+#   Scrapes match logs for all EPL players by season and club from Transfermarkt.
+#   Outputs: epl_matchlogs_transfermarkt_2015_2025_raw.csv, scrape_log.txt
+
 library(rvest)
 library(dplyr)
 library(stringr)
@@ -5,16 +11,15 @@ library(purrr)
 library(lubridate)
 library(httr)
 
-# --- Logging ---
+#  Logging helper 
 log_message <- function(msg) {
   cat(sprintf("[%s] %s\n", Sys.time(), msg), file = "scrape_log.txt", append = TRUE)
 }
 
-# --- Core settings ---
 seasons <- 2015:2024
 epl_comp_code <- "GB1"
 
-# Get all EPL clubs for a given season
+# Returns all EPL club URLs for a given season
 get_epl_club_urls <- function(season) {
   base_url <- paste0("https://www.transfermarkt.com/premier-league/startseite/wettbewerb/", epl_comp_code, "/plus/?saison_id=", season)
   log_message(paste("Reading EPL clubs from:", base_url))
@@ -35,7 +40,7 @@ get_epl_club_urls <- function(season) {
   )
 }
 
-# Get all player URLs from a club's squad page in a season
+# Returns all player URLs for a club for a given season
 get_club_player_urls <- function(club_url, season) {
   squad_url <- paste0(club_url, "/saison_id/", season)
   log_message(paste("Reading players from squad page:", squad_url))
@@ -54,7 +59,7 @@ get_club_player_urls <- function(club_url, season) {
   player_profile_urls <- paste0("https://www.transfermarkt.com", player_urls)
   player_name_slugs <- sapply(strsplit(player_urls, "/"), function(x) x[2])
   player_ids <- str_match(player_urls, "spieler/([0-9]+)")[,2]
-  # Defensive: if vectors are not the same length, skip
+  # Defensive: ensure all vectors are same length
   n <- min(length(player_names), length(player_profile_urls), length(player_name_slugs), length(player_ids))
   if(n == 0) {
     log_message(sprintf("Problem extracting players: names=%d, urls=%d, slugs=%d, ids=%d", 
@@ -70,7 +75,7 @@ get_club_player_urls <- function(club_url, season) {
   )
 }
 
-# Scrape player's EPL match log for a season (raw table version)
+# Scrapes a single player's EPL match log for a season
 scrape_player_matchlog <- function(player_name, player_name_slug, player_id, season, club_id) {
   if (is.na(player_id) || is.na(player_name_slug)) {
     log_message(paste("Skipping due to missing player_id or player_name_slug for", player_name))
@@ -116,10 +121,10 @@ scrape_player_matchlog <- function(player_name, player_name_slug, player_id, sea
   log
 }
 
-# Fallback for missing columns
+# Fallback operator for missing columns
 `%||%` <- function(a, b) if(!is.null(a) && !all(is.na(a))) a else b
 
-# --- MAIN LOOP ---
+#  MAIN LOOP 
 all_logs <- list()
 for(season in seasons) {
   log_message(paste("Processing season:", season))
