@@ -1,21 +1,26 @@
 # EPL Injury Data Scraper for Past 10 Seasons (2015–2024)
-# Required packages: worldfootballR, dplyr, purrr, lubridate
+# Author: Pranav Prasanth
+# Description:
+#   This script scrapes injury data for all English Premier League (EPL) players from Transfermarkt for the 2015–2024 seasons.
+#   Output: epl_injuries_2015_2024.csv (main injury dataset), epl_injury_scrape_log.txt (scraping log)
+# Usage:
+#   Run with required R packages installed: worldfootballR, dplyr, purrr, lubridate.
 
 library(worldfootballR)
 library(dplyr)
 library(purrr)
 library(lubridate)
 
-# Set file paths
+# Set file paths for output and logging
 main_save_file <- "C:/Users/LENOVO/Downloads/Dissertation Dataset/epl_injuries_2015_2024.csv"
 log_file <- "C:/Users/LENOVO/Downloads/Dissertation Dataset/epl_injury_scrape_log.txt"
 
 years <- 2015:2024
 
-# Helper: Safe scraping function with error handling
+# Helper function for safe scraping with error handling
 safe_tm_player_injury_history <- safely(tm_player_injury_history, otherwise = NULL)
 
-# Optionally load existing data to resume
+# Resume from existing data if available to avoid duplicate scraping
 if (file.exists(main_save_file)) {
   all_injuries <- read.csv(main_save_file, stringsAsFactors = FALSE)
   completed_years <- unique(all_injuries$season_start_year)
@@ -25,6 +30,7 @@ if (file.exists(main_save_file)) {
   all_injuries <- data.frame()
 }
 
+# Iterate over each season
 for (yr in years) {
   cat("Processing season:", yr, "\n", file = log_file, append = TRUE)
   team_urls <- tryCatch({
@@ -50,9 +56,9 @@ for (yr in years) {
     team_injuries_list <- map(player_urls, function(purl) {
       cat("      Processing player:", purl, "\n", file = log_file, append = TRUE)
       res <- safe_tm_player_injury_history(player_urls = purl)
+      # Filter injuries to those that occurred within the current season
       if (!is.null(res$result) && nrow(res$result) > 0) {
         df <- res$result
-        # Make sure date_from column exists and is in Date format
         if (!"date_from" %in% names(df)) {
           df$date_from <- NA
         }
@@ -73,7 +79,7 @@ for (yr in years) {
       team_injuries$season_label <- paste0(yr, "/", substr(yr + 1, 3, 4))
       season_injuries <- bind_rows(season_injuries, team_injuries)
     }
-    Sys.sleep(2)
+    Sys.sleep(2) # Polite delay for server
   }
   cat("Rows found this season:", nrow(season_injuries), "\n", file = log_file, append = TRUE)
   if (nrow(season_injuries) > 0) {
@@ -83,10 +89,10 @@ for (yr in years) {
   } else {
     cat("No injuries found for season", yr, "\n", file = log_file, append = TRUE)
   }
-  Sys.sleep(10)
+  Sys.sleep(10) # Longer delay after each season
 }
 
-# Always save the file at the end, even if empty
+# Always ensure file is saved at the end
 if (!file.exists(main_save_file)) {
   write.csv(all_injuries, main_save_file, row.names = FALSE)
   cat("Empty CSV created at", main_save_file, "\n", file = log_file, append = TRUE)
